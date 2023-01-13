@@ -37,7 +37,7 @@
 # CONSTANTS
 ########################
 
-default_kv_user_dir="$HOME/.kv-bash"
+default_kv_db="$HOME/.kv-bash"
 
 ########################
 # LOCAL FUNCTIONS
@@ -50,11 +50,11 @@ kv_echo_err() {
 
 # Usage: kv_echo_err_box <err-msg> <function-name>
 kv_echo_err_box() {
-	kv_user_dir=${KV_USER_DIR:-$default_kv_user_dir}
+	kv_db=${KV_DB:-$default_kv_db}
 	kv_echo_err "  +-------------------------------+"
 	kv_echo_err "  | ERROR: $1"
 	kv_echo_err "  | function: $2"
-	kv_echo_err "  | dir: $kv_user_dir"
+	kv_echo_err "  | dir: $kv_db"
 	kv_echo_err "  +-------------------------------+"
 }
 
@@ -103,8 +103,8 @@ kvget() {
 		kv_echo_err_box 'invalid param "key"' 'kvget()'
 		return 1
 	}
-	kv_user_dir=${KV_USER_DIR:-$default_kv_user_dir}
-	VALUE="$([ -f "$kv_user_dir/$key" ] && cat "$kv_user_dir/$key")"
+	kv_db=${KV_DB:-$default_kv_db}
+	VALUE="$([ -f "$kv_db/$key" ] && cat "$kv_db/$key")"
 	echo "$VALUE"
 	
 	[ "$VALUE" != "" ]
@@ -118,9 +118,9 @@ kvset() {
 		kv_echo_err_box 'invalid param "key"' 'kvset()'
 		return 1
 	}
-	kv_user_dir=${KV_USER_DIR:-$default_kv_user_dir}
-	test -d "$kv_user_dir" || mkdir "$kv_user_dir"
-	echo "$value" > "$kv_user_dir/$key"
+	kv_db=${KV_DB:-$default_kv_db}
+	test -d "$kv_db" || mkdir -p "$kv_db"
+	echo "$value" > "$kv_db/$key"
 }
 
 # Usage: kvdel <key>
@@ -130,15 +130,15 @@ kvdel() {
 		kv_echo_err_box 'invalid param "key"' 'kvdel()'
 		return 1
 	}
-	kv_user_dir=${KV_USER_DIR:-$default_kv_user_dir}
-	test -f "$kv_user_dir/$key" && rm -f "$kv_user_dir/$key"
+	kv_db=${KV_DB:-$default_kv_db}
+	test -f "$kv_db/$key" && rm -f "$kv_db/$key"
 }
 
 # list all key/value pairs to stdout
 # Usage: kvlist
 kvlist() {
-	kv_user_dir=${KV_USER_DIR:-$default_kv_user_dir}
-	for i in "$kv_user_dir/"*; do
+	kv_db=${KV_DB:-$default_kv_db}
+	for i in "$kv_db/"*; do
 		if [ -f "$i" ]; then
 			key="$(basename "$i")"
 			echo "$key" "$(kvget "$key")"
@@ -149,6 +149,28 @@ kvlist() {
 # clear all key/value pairs in database
 # Usage: kvclear
 kvclear() {
-  kv_user_dir=${KV_USER_DIR:-$default_kv_user_dir}
-	rm -rf "$kv_user_dir"
+  kv_db=${KV_DB:-$default_kv_db}
+	rm -rf "$kv_db"
+}
+
+# internal function for check valid TGZ file name
+_kv_check_tgz_() {
+	[[ "$1" =~ (\.tar\.gz|\.tgz|\.tar)$ ]] && 
+		echo "$1" ||
+		echo "$1.tgz"
+}
+
+# load DB from TGZ file
+# Usage: kvload <file>
+kvload() {
+  kv_db=${KV_DB:-$default_kv_db}
+  test -d "$kv_db" || mkdir -p "$kv_db"
+  tar  -C "${kv_db}" -xzf $(_kv_check_tgz_ "$1")
+}
+
+# save DB to TGZ file
+# Usage: kvsave <file>
+kvsave() {
+  kv_db=${KV_DB:-$default_kv_db}
+	tar -czf $(_kv_check_tgz_ "$1") -C "$kv_db" .
 }

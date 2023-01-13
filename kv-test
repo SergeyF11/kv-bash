@@ -6,9 +6,10 @@ source $BASH_DIR/kv-bash
 OK()      { echo -e "[\e[01;32m  OK  \e[0m]"; }
 FAILED()  { echo -e "[\e[01;31mFAILED\e[0m]"; }
 RESULT()  { [ $? == 0 ] && OK || FAILED; }
+BENCHMARK_RESULT() { echo -e "[\e[01;32m  $1 ops \e[0m]"; }
 
 TEST_COUNT=0
-test_dirA="./testingdirA"
+test_dirA="/tmp/testingdirA"
 test_dirB="./testingdirB"
 
 # Usage: TESTCASE [description string]
@@ -17,20 +18,55 @@ function TESTCASE() {
 	printf "%3s %-50s" "$TEST_COUNT" "$1"
 }
 
+# Usage: _benchmark_ init|stop|<function>
+function _benchmark_() {
+	case "$1" in \
+		"init")
+		declare -g _BENCHMARK_START_=$( date +%s%N );
+		;;
+		"stop")
+		local COUNT=${_BENCHMARK_COUNT_};
+		unset _BENCHMARK_COUNT_;
+		echo ${COUNT}>&2;
+		exit;
+		;;
+		*)
+		for ((;;)); do (( _BENCHMARK_COUNT_++ ));
+		eval "$@";
+		done
+		;;
+	esac
+}
+# Usage: BENCHMARK <LOOP_QTY> <function> [parameters...] 
+function BENCHMARK() {
+	local BENCHMARK_START_=$( date +%s%N );
+	local QTY_LOOP=$1; shift;
+	local N=${QTY_LOOP};
+	while (( ${N} != 0 )); do
+		(( N-- ));
+		eval "$@";
+	done;
+	local TIME_NANO=$(($( date +%s%N )-${BENCHMARK_START_}));
+	local TIME_MS=$((${TIME_NANO}/1000000));
+	#echo | awk -v qty=${QTY_LOOP} -v millis=${TIME_MS} '{ print qty" op in "millis/1000"s" }' >&2;
+	echo $(($((${QTY_LOOP}*1000))/${TIME_MS}));
+}
+
+
 rm -rf "$test_dirA" "$test_dirB"
 
 echo
 echo RUN ALL TEST CASES:
 echo ===================
 
-TESTCASE 'NO KV_USER_DIR: kvclear; kvlist => line count = 0'
+TESTCASE 'NO KV_DB: kvclear; kvlist => line count = 0'
         kvset cat Tom
         kvset mouse Jerry
         kvclear
         [ $(kvlist | wc -l) == 0 ]
         RESULT
 
-KV_USER_DIR="$test_dirA"
+KV_DB="$test_dirA"
 
 TESTCASE 'call kvget for non-exist key should return empty'
 	[ "$(kvget name)" == "" ]
@@ -107,7 +143,7 @@ TESTCASE 'spaces in value'
 TESTCASE 'can change user dir'
 	kvclear
 	kvset Foo Bar
-	KV_USER_DIR="$test_dirB"
+	KV_DB="$test_dirB"
 	kvset var1 value1
 	kvset var2 value2
 	kvset var3 value3
@@ -116,11 +152,79 @@ TESTCASE 'can change user dir'
 	kvclear
 
 TESTCASE 'can return to old user dir'
-	KV_USER_DIR="$test_dirA"
+	KV_DB="$test_dirA"
 	[ $(kvlist | wc -l) == 1 ]
 	RESULT
 	kvclear
 	
 #more testcase here
+DB_FILE=foobar
+TESTCASE 'save DB to file without ext (.tgz usage)'
+	KV_DB="$test_dirA"
+	kvclear
+	kvset Foo Bar
+	kvsave ${DB_FILE}
+	[ -f ${DB_FILE}.tgz ]
+	RESULT
+	kvclear
+
+TESTCASE 'load DB from file without ext (.tgz usage)'
+	KV_DB="$test_dirB"
+	kvclear
+	kvload ${DB_FILE}
+	[ $(kvlist | wc -l) == 1 ]
+	RESULT
+	kvclear
+	rm ${DB_FILE}.tgz
+
+DB_FILE=foobar.tar.gz
+TESTCASE 'save DB to tar.gz file'
+	KV_DB="$test_dirA"
+	kvclear
+	kvset Foo Bar
+	kvsave ${DB_FILE}
+	[ -f ${DB_FILE} ]
+	RESULT
+	kvclear
+
+TESTCASE 'load DB from tar.gz file'
+	KV_DB="$test_dirB"
+	kvclear
+	kvload ${DB_FILE}
+	[ $(kvlist | wc -l) == 1 ]
+	RESULT
+	kvclear
+	rm ${DB_FILE}
+
+	KV_DB="$test_dirA"
+	QTY_LOOP=100000
+TESTCASE "benchmark ${KV_DB} kvset"
+	kvclear
+	declare -g NUM=1;
+
+	RESULT=$( BENCHMARK ${QTY_LOOP} "kvset foo\${NUM} Bar\$((NUM++)) >/dev/null" );
+	[[ $( ls -w1 ${KV_DB} | wc -l ) == ${QTY_LOOP} ]] && \
+		BENCHMARK_RESULT ${RESULT} || \
+		FAILED  
+
+TESTCASE "benchmark ${KV_DB}  kvget"
+	declare -g NUM=1;
+	BENCHMARK_RESULT $( BENCHMARK 10000 "kvget foo\$((NUM++))>/dev/null" )
+	kvclear
+
+
+	KV_DB="$test_dirB"
+TESTCASE "benchmark ${KV_DB}  kvset"
+	kvclear
+	declare -g NUM=1;
+	RESULT=$( BENCHMARK ${QTY_LOOP} "kvset foo\${NUM} Bar\$((NUM++)) >/dev/null" );
+	[[ $( ls -w1 ${KV_DB} | wc -l ) == ${QTY_LOOP} ]] && \
+		BENCHMARK_RESULT ${RESULT} || \
+		FAILED  
+
+TESTCASE "benchmark ${KV_DB}  kvget"
+	declare -g NUM=100;
+	BENCHMARK_RESULT $( BENCHMARK 10000 "kvget foo\$((NUM++)) >/dev/null" )
+	kvclear
 
 echo
