@@ -87,6 +87,9 @@ kv_validate_key() {
 	kv_echo_err "  |     $ kvdel pass                               |"
 	kv_echo_err "  |     $ kvget pass                               |"
 	kv_echo_err "  |                                                |"
+	kv_echo_err "  |     $ kvsave db_backup[.tgz]                   |"
+	kv_echo_err "  |     $ kvload db_backup[.tgz]                   |"
+	kv_echo_err "  |     $                                          |"
 	kv_echo_err "  |     $ kvclear                                  |"
 	kv_echo_err "  +------------------------------------------------+"
 	exit 1
@@ -97,6 +100,17 @@ kv_validate_key() {
 ########################
 
 # Usage: kvget <key>
+_kvget() {
+	key="$1"
+	kv_validate_key "$key" || {
+		kv_echo_err_box 'invalid param "key"' 'kvget()'
+		return 1
+	}
+    cat "${KV_DB:-$default_kv_db}/$key" 2>/dev/null || {
+        echo; return 1;
+    }
+}
+
 kvget() {
 	key="$1"
 	kv_validate_key "$key" || {

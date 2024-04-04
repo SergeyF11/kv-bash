@@ -15,41 +15,20 @@ test_dirB="./testingdirB"
 # Usage: TESTCASE [description string]
 function TESTCASE() {
     ((TEST_COUNT++))
-	printf "%3s %-50s" "$TEST_COUNT" "$1"
+	printf "%3s %-70s" "$TEST_COUNT" "$1"
 }
 
-# Usage: _benchmark_ init|stop|<function>
-function _benchmark_() {
-	case "$1" in \
-		"init")
-		declare -g _BENCHMARK_START_=$( date +%s%N );
-		;;
-		"stop")
-		local COUNT=${_BENCHMARK_COUNT_};
-		unset _BENCHMARK_COUNT_;
-		echo ${COUNT}>&2;
-		exit;
-		;;
-		*)
-		for ((;;)); do (( _BENCHMARK_COUNT_++ ));
-		eval "$@";
-		done
-		;;
-	esac
-}
 # Usage: BENCHMARK <LOOP_QTY> <function> [parameters...] 
 function BENCHMARK() {
 	local BENCHMARK_START_=$( date +%s%N );
-	local QTY_LOOP=$1; shift;
-	local N=${QTY_LOOP};
-	while (( ${N} != 0 )); do
-		(( N-- ));
-		eval "$@";
+	declare local {QTY_LOOP,N}=$1; 
+	shift;
+
+	while (( N-- )); do
+        eval "$@";
 	done;
-	local TIME_NANO=$(($( date +%s%N )-${BENCHMARK_START_}));
-	local TIME_MS=$((${TIME_NANO}/1000000));
-	#echo | awk -v qty=${QTY_LOOP} -v millis=${TIME_MS} '{ print qty" op in "millis/1000"s" }' >&2;
-	echo $(($((${QTY_LOOP}*1000))/${TIME_MS}));
+	let local TIME_mS=($( date +%s%N )-${BENCHMARK_START_})/1000000;
+	echo $(( (${QTY_LOOP}*1000+500)/${TIME_mS} ));
 }
 
 
@@ -198,33 +177,33 @@ TESTCASE 'load DB from tar.gz file'
 
 	KV_DB="$test_dirA"
 	QTY_LOOP=100000
-TESTCASE "benchmark ${KV_DB} kvset"
+TESTCASE "benchmark ${KV_DB} kvset foo[1...${QTY_LOOP}] Bar[1...${QTY_LOOP}]"
 	kvclear
 	declare -g NUM=1;
 
-	RESULT=$( BENCHMARK ${QTY_LOOP} "kvset foo\${NUM} Bar\$((NUM++)) >/dev/null" );
+	RESULT=$( BENCHMARK ${QTY_LOOP} 'kvset foo${NUM} Bar$((NUM++))' );
 	[[ $( ls -w1 ${KV_DB} | wc -l ) == ${QTY_LOOP} ]] && \
-		BENCHMARK_RESULT ${RESULT} || \
-		FAILED  
+        BENCHMARK_RESULT ${RESULT} || \
+        FAILED  
 
-TESTCASE "benchmark ${KV_DB}  kvget"
+TESTCASE "benchmark ${KV_DB} kvget foo[1...10000]"
 	declare -g NUM=1;
-	BENCHMARK_RESULT $( BENCHMARK 10000 "kvget foo\$((NUM++))>/dev/null" )
+	BENCHMARK_RESULT $( BENCHMARK 10000 'BAR=$(kvget foo${NUM} )&& [ ${BAR} == "Bar$((NUM++))" ]' )
 	kvclear
 
 
 	KV_DB="$test_dirB"
-TESTCASE "benchmark ${KV_DB}  kvset"
+TESTCASE "benchmark ${KV_DB} kvset foo[1...${QTY_LOOP}] Bar[1...${QTY_LOOP}]"
 	kvclear
 	declare -g NUM=1;
-	RESULT=$( BENCHMARK ${QTY_LOOP} "kvset foo\${NUM} Bar\$((NUM++)) >/dev/null" );
+	RESULT=$( BENCHMARK ${QTY_LOOP} 'kvset foo${NUM} Bar$((NUM++))' );
 	[[ $( ls -w1 ${KV_DB} | wc -l ) == ${QTY_LOOP} ]] && \
-		BENCHMARK_RESULT ${RESULT} || \
-		FAILED  
+        BENCHMARK_RESULT ${RESULT} || \
+        FAILED  
 
-TESTCASE "benchmark ${KV_DB}  kvget"
+TESTCASE "benchmark ${KV_DB} kvget foo[1...10000]"
 	declare -g NUM=100;
-	BENCHMARK_RESULT $( BENCHMARK 10000 "kvget foo\$((NUM++)) >/dev/null" )
+	BENCHMARK_RESULT $( BENCHMARK 10000 'BAR=$(kvget foo${NUM} )&& [ ${BAR} == "Bar$((NUM++))" ]' )
 	kvclear
 
 echo
